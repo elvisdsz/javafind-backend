@@ -1,10 +1,15 @@
 package org.elvisdsouza.javafind.service;
 
+import org.apache.lucene.search.BooleanClause;
+import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
 import org.apache.maven.index.*;
+import org.apache.maven.index.artifact.Gav;
 import org.apache.maven.index.context.IndexCreator;
 import org.apache.maven.index.context.IndexingContext;
+import org.apache.maven.index.expr.SourcedSearchExpression;
 import org.apache.maven.index.expr.UserInputSearchExpression;
+import org.apache.maven.index.locator.ArtifactLocator;
 import org.apache.maven.index.updater.*;
 import org.apache.maven.wagon.Wagon;
 import org.apache.maven.wagon.events.TransferEvent;
@@ -12,6 +17,7 @@ import org.apache.maven.wagon.events.TransferListener;
 import org.apache.maven.wagon.observers.AbstractTransferListener;
 import org.codehaus.plexus.*;
 import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
+import org.elvisdsouza.javafind.domain.SearchResult;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -19,6 +25,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 public class SearchService {
@@ -104,12 +111,34 @@ public class SearchService {
 
     }
 
-    public String searchUserInput(String userQueryString) throws IOException {
+    public List<SearchResult> searchUserInput(String userQueryString) throws IOException {
         Query qq = indexer.constructQuery(MAVEN.ARTIFACT_ID, new UserInputSearchExpression(userQueryString));
-        return search(this.indexer, "SearchQuery: "+userQueryString, qq);
+
+        // Only sources
+        Query sourcesQ = indexer.constructQuery(MAVEN.CLASSIFIER, new SourcedSearchExpression( "sources" ));
+        BooleanQuery mainQuery = new BooleanQuery.Builder()
+                .add(qq, BooleanClause.Occur.MUST)
+                .add(sourcesQ, BooleanClause.Occur.MUST)
+                .build();
+
+        return search(this.indexer, "SearchQuery: "+userQueryString, mainQuery);
     }
 
-    public String search(Indexer nexusIndexer, String descr, Query q) throws IOException {
+    public List<SearchResult> search(Indexer nexusIndexer, String descr, Query q) throws IOException {
+        System.out.println( "Searching for " + descr );
+
+        FlatSearchRequest fsr = new FlatSearchRequest( q, centralContext );
+        fsr.setCount(10);
+        FlatSearchResponse response = nexusIndexer.searchFlat(fsr);
+
+        System.out.println( "------" );
+        System.out.println( "Total: " + response.getTotalHitsCount() );
+        System.out.println();
+
+        return response.getResults().stream().map(ai -> new SearchResult(ai)).collect(Collectors.toList());
+    }
+
+    public String searchAndDump(Indexer nexusIndexer, String descr, Query q) throws IOException {
 
         System.out.println( "Searching for " + descr );
 
@@ -117,11 +146,14 @@ public class SearchService {
         fsr.setCount(10);
         FlatSearchResponse response = nexusIndexer.searchFlat(fsr);
 
-        String output = "RESULTS\n=======\n<br/>";
+        String output = "RESULTS<br/>\n=======\n<br/>";
         for ( ArtifactInfo ai : response.getResults() )
         {
             //System.out.println( ai.toString() );
-            String urlpath=centralContext.getRepositoryUrl()+centralContext.getGavCalculator().gavToPath(ai.calculateGav());
+            //String urlpath=centralContext.getRepositoryUrl()+centralContext.getGavCalculator().gavToPath(ai.calculateGav());
+            String urlpath=centralContext.getRepositoryUrl()+centralContext.getGavCalculator()
+                    .gavToPath(new Gav(ai.getGroupId(), ai.getArtifactId(), ai.getVersion(), ai.getClassifier(), ai.getFileExtension(), null, null, null, false, null, false, null ));
+            urlpath = "<a href='"+urlpath+"'>"+urlpath+"</a>";
             output += ( ai.toString() +" ?"+ai.getSourcesExists() +" - "+urlpath) + "\n<br/>";
         }
 
