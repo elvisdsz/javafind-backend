@@ -1,15 +1,17 @@
 package org.elvisdsouza.javafind.service;
 
+import org.apache.commons.io.IOUtils;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
 import org.apache.maven.index.*;
 import org.apache.maven.index.artifact.Gav;
+import org.apache.maven.index.artifact.GavCalculator;
+import org.apache.maven.index.artifact.M2GavCalculator;
 import org.apache.maven.index.context.IndexCreator;
 import org.apache.maven.index.context.IndexingContext;
 import org.apache.maven.index.expr.SourcedSearchExpression;
 import org.apache.maven.index.expr.UserInputSearchExpression;
-import org.apache.maven.index.locator.ArtifactLocator;
 import org.apache.maven.index.updater.*;
 import org.apache.maven.wagon.Wagon;
 import org.apache.maven.wagon.events.TransferEvent;
@@ -17,11 +19,17 @@ import org.apache.maven.wagon.events.TransferListener;
 import org.apache.maven.wagon.observers.AbstractTransferListener;
 import org.codehaus.plexus.*;
 import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
-import org.elvisdsouza.javafind.domain.SearchResult;
+import org.elvisdsouza.javafind.domain.JavaFindArtifact;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -111,7 +119,7 @@ public class SearchService {
 
     }
 
-    public List<SearchResult> searchUserInput(String userQueryString) throws IOException {
+    public List<JavaFindArtifact> searchUserInput(String userQueryString) throws IOException {
         Query qq = indexer.constructQuery(MAVEN.ARTIFACT_ID, new UserInputSearchExpression(userQueryString));
 
         // Only sources
@@ -124,7 +132,7 @@ public class SearchService {
         return search(this.indexer, "SearchQuery: "+userQueryString, mainQuery);
     }
 
-    public List<SearchResult> search(Indexer nexusIndexer, String descr, Query q) throws IOException {
+    public List<JavaFindArtifact> search(Indexer nexusIndexer, String descr, Query q) throws IOException {
         System.out.println( "Searching for " + descr );
 
         FlatSearchRequest fsr = new FlatSearchRequest( q, centralContext );
@@ -135,7 +143,33 @@ public class SearchService {
         System.out.println( "Total: " + response.getTotalHitsCount() );
         System.out.println();
 
-        return response.getResults().stream().map(ai -> new SearchResult(ai)).collect(Collectors.toList());
+        return response.getResults().stream().map(ai -> new JavaFindArtifact(ai)).collect(Collectors.toList());
+    }
+
+    public byte[] getFileBytes(JavaFindArtifact artifact) {
+        try {
+            String urlString = artifact.toUrlPath(centralContext);
+            URL url = new URL(urlString);
+            return IOUtils.toByteArray(url.openStream());
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    public byte[] getFileBytes(String relFilepath) {
+        try {
+            String urlString = relPathToUrl(relFilepath);
+            URL url = new URL(urlString);
+            return IOUtils.toByteArray(url.openStream());
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
     }
 
     public String searchAndDump(Indexer nexusIndexer, String descr, Query q) throws IOException {
@@ -161,5 +195,11 @@ public class SearchService {
         System.out.println( "Total: " + response.getTotalHitsCount() );
         System.out.println();
         return output;
+    }
+
+    private String relPathToUrl(String relFilepath) {
+        GavCalculator gavCalculator = new M2GavCalculator();
+        Gav gav = gavCalculator.pathToGav(relFilepath);
+        return centralContext.getRepositoryUrl() + centralContext.getGavCalculator().gavToPath(gav);
     }
 }

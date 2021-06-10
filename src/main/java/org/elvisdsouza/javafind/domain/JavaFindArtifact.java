@@ -1,24 +1,34 @@
 package org.elvisdsouza.javafind.domain;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
 import org.apache.maven.index.ArtifactInfo;
 import org.apache.maven.index.artifact.Gav;
+import org.apache.maven.index.artifact.GavCalculator;
+import org.apache.maven.index.artifact.M2GavCalculator;
 import org.apache.maven.index.context.IndexingContext;
 
 @Data
-public class SearchResult {
+@AllArgsConstructor
+public class JavaFindArtifact {
     private String groupId;
     private String artifactId;
     private String version;
     private String classifier;
     private String fileExtension;
+    private String relFilepath;
 
-    public SearchResult(ArtifactInfo ai) {
+    public JavaFindArtifact() {
+    }
+
+    public JavaFindArtifact(ArtifactInfo ai) {
+        ai.calculateGav();
         this.groupId = ai.getGroupId();
         this.artifactId = ai.getArtifactId();
         this.version = ai.getVersion();
         this.classifier = ai.getClassifier();
         this.fileExtension = ai.getFileExtension();
+        this.relFilepath = toRelUrlPath();
     }
 
     public Gav toGav() {
@@ -28,5 +38,10 @@ public class SearchResult {
 
     public String toUrlPath(IndexingContext indexingContext) {
         return indexingContext.getRepositoryUrl() + indexingContext.getGavCalculator().gavToPath(this.toGav());
+    }
+
+    public String toRelUrlPath() {
+        GavCalculator gavCalculator = new M2GavCalculator();
+        return gavCalculator.gavToPath(this.toGav());
     }
 }
