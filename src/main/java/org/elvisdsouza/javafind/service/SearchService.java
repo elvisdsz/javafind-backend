@@ -12,6 +12,7 @@ import org.apache.maven.index.context.IndexCreator;
 import org.apache.maven.index.context.IndexingContext;
 import org.apache.maven.index.expr.SourcedSearchExpression;
 import org.apache.maven.index.expr.UserInputSearchExpression;
+import org.apache.maven.index.search.grouping.GAGrouping;
 import org.apache.maven.index.updater.*;
 import org.apache.maven.wagon.Wagon;
 import org.apache.maven.wagon.events.TransferEvent;
@@ -19,6 +20,7 @@ import org.apache.maven.wagon.events.TransferListener;
 import org.apache.maven.wagon.observers.AbstractTransferListener;
 import org.codehaus.plexus.*;
 import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
+import org.codehaus.plexus.util.StringUtils;
 import org.elvisdsouza.javafind.domain.JavaFindArtifact;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +35,7 @@ import java.nio.channels.ReadableByteChannel;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -129,7 +132,7 @@ public class SearchService {
                 .add(sourcesQ, BooleanClause.Occur.MUST)
                 .build();
 
-        return search(this.indexer, "SearchQuery: "+userQueryString, mainQuery);
+        return searchGrouped(this.indexer, "SearchQuery: "+userQueryString, mainQuery);
     }
 
     public List<JavaFindArtifact> search(Indexer nexusIndexer, String descr, Query q) throws IOException {
@@ -144,6 +147,30 @@ public class SearchService {
         System.out.println();
 
         return response.getResults().stream().map(ai -> new JavaFindArtifact(ai)).collect(Collectors.toList());
+    }
+
+    public List<JavaFindArtifact> searchGrouped(Indexer nexusIndexer, String descr, Query q) throws IOException {
+        System.out.println( " === Grouped Searching Results for -- " + descr );
+        GroupedSearchRequest gsr = new GroupedSearchRequest( q, new GAGrouping(), centralContext );
+        gsr.setCount(10);
+        GroupedSearchResponse response = nexusIndexer.searchGrouped(gsr);
+        for ( Map.Entry<String, ArtifactInfoGroup> entry : response.getResults().entrySet() )
+        {
+            System.out.println( "* Entry KEY" + entry.getKey() );
+            ArtifactInfo ai = entry.getValue().getArtifactInfos().iterator().next();
+            System.out.println( "* Entry " + ai );
+            System.out.println( "  Latest version:  " + ai.getVersion() );
+            System.out.println( StringUtils.isBlank( ai.getDescription() )
+                    ? "No description in plugin's POM."
+                    : StringUtils.abbreviate( ai.getDescription(), 60 ) );
+            System.out.println();
+        }
+        System.out.println( " === Grouped Searching ENDS === ");
+
+        System.out.println( "------" );
+        System.out.println( "Total Grouped: " + response.getTotalHitsCount() );
+        System.out.println();
+        return response.getResults().values().stream().map(ai -> new JavaFindArtifact(ai.getArtifactInfos().iterator().next())).collect(Collectors.toList());
     }
 
     public byte[] getFileBytes(JavaFindArtifact artifact) {
