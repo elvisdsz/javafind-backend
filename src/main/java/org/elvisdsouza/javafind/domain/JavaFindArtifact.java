@@ -11,6 +11,7 @@ import org.apache.maven.index.context.IndexingContext;
 @Data
 @AllArgsConstructor
 public class JavaFindArtifact {
+    private String name;
     private String description;
     private String groupId;
     private String artifactId;
@@ -24,6 +25,7 @@ public class JavaFindArtifact {
 
     public JavaFindArtifact(ArtifactInfo ai) {
         // ai.calculateGav();
+        this.name = ai.getName();
         this.description = ai.getDescription();
         this.groupId = ai.getGroupId();
         this.artifactId = ai.getArtifactId();
