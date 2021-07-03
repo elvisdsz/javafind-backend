@@ -301,10 +301,10 @@ public class SearchService {
         int skipRecords = pageNumber<=1? 0: (pageNumber-1)*pageSize;
 
         return response.getResults().values().stream().skip(skipRecords).limit(pageSize)
-                .map(ai -> new JavaFindArtifact(ai.getArtifactInfos().iterator().next())).collect(Collectors.toList());
+                .map(ai -> new JavaFindArtifact(ai)).collect(Collectors.toList());
     }
 
-    public byte[] getFileBytes(JavaFindArtifact artifact) {
+    /*public byte[] getFileBytes(JavaFindArtifact artifact) {
         try {
             String urlString = artifact.toUrlPath(centralContext);
             URL url = new URL(urlString);
@@ -315,7 +315,7 @@ public class SearchService {
             e.printStackTrace();
         }
         return null;
-    }
+    }*/
 
     public byte[] getFileBytes(String relFilepath) {
         try {

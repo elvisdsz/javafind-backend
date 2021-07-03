@@ -27,6 +27,7 @@ public class SearchController {
     //@PostMapping("/getFile")
     @GetMapping("/getFile")
     public ResponseEntity<byte[]> getFile(@RequestParam("fp") String relFilepath){
+        System.out.println("Downloading file "+relFilepath);
         byte[] contents = searchService.getFileBytes(relFilepath);
         HttpHeaders headers = new HttpHeaders();
         //headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
