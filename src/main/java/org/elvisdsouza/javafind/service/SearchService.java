@@ -1,6 +1,12 @@
 package org.elvisdsouza.javafind.service;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.queryparser.classic.MultiFieldQueryParser;
+import org.apache.lucene.queryparser.classic.ParseException;
+import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Query;
@@ -10,6 +16,7 @@ import org.apache.maven.index.artifact.GavCalculator;
 import org.apache.maven.index.artifact.M2GavCalculator;
 import org.apache.maven.index.context.IndexCreator;
 import org.apache.maven.index.context.IndexingContext;
+import org.apache.maven.index.context.NexusAnalyzer;
 import org.apache.maven.index.expr.SourcedSearchExpression;
 import org.apache.maven.index.expr.UserInputSearchExpression;
 import org.apache.maven.index.search.grouping.GAGrouping;
@@ -24,10 +31,7 @@ import org.codehaus.plexus.util.StringUtils;
 import org.elvisdsouza.javafind.domain.JavaFindArtifact;
 import org.springframework.stereotype.Service;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.channels.Channels;
@@ -123,7 +127,8 @@ public class SearchService {
     }
 
     public List<JavaFindArtifact> searchUserInput(String userQueryString) throws IOException {
-        Query qq = indexer.constructQuery(MAVEN.ARTIFACT_ID, new UserInputSearchExpression(userQueryString));
+
+        Query qq = constructSuperQuery(userQueryString);
 
         // Only sources
         Query sourcesQ = indexer.constructQuery(MAVEN.CLASSIFIER, new SourcedSearchExpression( "sources" ));
@@ -132,7 +137,127 @@ public class SearchService {
                 .add(sourcesQ, BooleanClause.Occur.MUST)
                 .build();
 
-        return searchGrouped(this.indexer, "SearchQuery: "+userQueryString, mainQuery);
+        return searchGrouped(this.indexer, "SearchQuery: "+userQueryString, mainQuery, 10, 1);
+    }
+
+    public Query constructSuperQuery(String userQueryString) {
+
+        /*Query query_aid = indexer.constructQuery(MAVEN.ARTIFACT_ID, new UserInputSearchExpression(userQueryString));
+        Query query_gid = indexer.constructQuery(MAVEN.GROUP_ID, new UserInputSearchExpression(userQueryString));
+
+        BooleanQuery booleanQuery = new BooleanQuery.Builder()
+                .add(query_aid, BooleanClause.Occur.SHOULD)
+                .add(query_gid, BooleanClause.Occur.SHOULD).build();
+
+        return booleanQuery;*/
+
+        String queryString = userQueryString;
+
+        IndexerField groupIdIndexerField = selectIndexerField(MAVEN.GROUP_ID, SearchType.SCORED);
+        IndexerField artifactIdIndexerField = selectIndexerField(MAVEN.ARTIFACT_ID, SearchType.SCORED);
+
+        MultiFieldQueryParser parser = new MultiFieldQueryParser(
+                new String[]{groupIdIndexerField.getKey(), artifactIdIndexerField.getKey()},
+                new NexusAnalyzer());
+        parser.setDefaultOperator(QueryParser.AND_OPERATOR);
+
+        // Copied from DefaultQueryCreator
+        if ( queryString.matches( ".*(\\.|-|_|/).*" ) ) {
+            queryString = queryString.toLowerCase().replaceAll( "\\*", "X" ).replaceAll( "\\.|-|_|/", " " ).replaceAll( "X",
+                            "*" ).replaceAll( " \\* ", "" ).replaceAll( "^\\* ", "" ).replaceAll( " \\*$", "" );
+        }
+
+        if ( !queryString.endsWith( "*" ) && !queryString.endsWith( " " ) ) {
+            queryString += "*";
+        }
+
+        try {
+            BooleanQuery.Builder q1Build = new BooleanQuery.Builder()
+                    .add(parser.parse(queryString), BooleanClause.Occur.SHOULD);
+
+            if ( queryString.contains( " " ) )
+            {
+                q1Build.add( parser.parse( "\"" + queryString + "\"" ), BooleanClause.Occur.SHOULD );
+            }
+
+            Query q2 = null;
+
+            /*int termCount = countTerms( indexerField, userQueryString );
+
+            // try with KW only if the processed query in qpQuery does not have spaces!
+            if ( !userQueryString.contains( " " ) && termCount > 1 )
+            {
+                // get the KW field
+                IndexerField keywordField = selectIndexerField( indexerField.getOntology(), SearchType.EXACT );
+
+                if ( keywordField.isKeyword() )
+                {
+                    q2 = indexer.constructQuery( indexerField.getOntology(), keywordField, userQueryString, SearchType.SCORED );
+                }
+            }*/
+
+            BooleanQuery q1 = q1Build.build();
+            if ( q2 == null )
+            {
+                return q1;
+            }
+            else
+            {
+                BooleanQuery bq = new BooleanQuery.Builder()
+                    // trick with order
+                    .add( q2, BooleanClause.Occur.SHOULD )
+                    .add( q1, BooleanClause.Occur.SHOULD ).build();
+
+                return bq;
+            }
+
+        } catch (ParseException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    protected int countTerms( final IndexerField indexerField, final String query )
+    {
+        try
+        {
+            TokenStream ts = new NexusAnalyzer().tokenStream( indexerField.getKey(), new StringReader( query ) );
+            ts.reset();
+
+            int result = 0;
+
+            while ( ts.incrementToken() )
+            {
+                result++;
+            }
+
+            ts.end();
+            ts.close();
+
+            return result;
+        }
+        catch ( IOException e )
+        {
+            // will not happen
+            return 1;
+        }
+    }
+
+    public IndexerField selectIndexerField( final Field field, final SearchType type )
+    {
+        IndexerField lastField = null;
+
+        for ( IndexerField indexerField : field.getIndexerFields() )
+        {
+            lastField = indexerField;
+
+            if ( type.matchesIndexerField( indexerField ) )
+            {
+                return indexerField;
+            }
+        }
+
+        return lastField;
     }
 
     public List<JavaFindArtifact> search(Indexer nexusIndexer, String descr, Query q) throws IOException {
@@ -149,12 +274,13 @@ public class SearchService {
         return response.getResults().stream().map(ai -> new JavaFindArtifact(ai)).collect(Collectors.toList());
     }
 
-    public List<JavaFindArtifact> searchGrouped(Indexer nexusIndexer, String descr, Query q) throws IOException {
+    public List<JavaFindArtifact> searchGrouped(Indexer nexusIndexer, String descr, Query q,
+                                                int pageSize, int pageNumber) throws IOException {
         System.out.println( " === Grouped Searching Results for -- " + descr );
         GroupedSearchRequest gsr = new GroupedSearchRequest( q, new GAGrouping(), centralContext );
-        gsr.setCount(10);
+        //gsr.setCount(10);
         GroupedSearchResponse response = nexusIndexer.searchGrouped(gsr);
-        for ( Map.Entry<String, ArtifactInfoGroup> entry : response.getResults().entrySet() )
+        /*for ( Map.Entry<String, ArtifactInfoGroup> entry : response.getResults().entrySet() )
         {
             System.out.println( "* Entry KEY" + entry.getKey() );
             ArtifactInfo ai = entry.getValue().getArtifactInfos().iterator().next();
@@ -165,12 +291,17 @@ public class SearchService {
                     : StringUtils.abbreviate( ai.getDescription(), 60 ) );
             System.out.println();
         }
-        System.out.println( " === Grouped Searching ENDS === ");
+        System.out.println( " === Grouped Searching ENDS === ");*/
 
         System.out.println( "------" );
         System.out.println( "Total Grouped: " + response.getTotalHitsCount() );
+        System.out.println( "Total Individual: " + response.getReturnedHitsCount() );
         System.out.println();
-        return response.getResults().values().stream().map(ai -> new JavaFindArtifact(ai.getArtifactInfos().iterator().next())).collect(Collectors.toList());
+
+        int skipRecords = pageNumber<=1? 0: (pageNumber-1)*pageSize;
+
+        return response.getResults().values().stream().skip(skipRecords).limit(pageSize)
+                .map(ai -> new JavaFindArtifact(ai.getArtifactInfos().iterator().next())).collect(Collectors.toList());
     }
 
     public byte[] getFileBytes(JavaFindArtifact artifact) {
