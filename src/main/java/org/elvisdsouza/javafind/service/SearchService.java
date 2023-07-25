@@ -29,6 +29,7 @@ import org.codehaus.plexus.*;
 import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
 import org.codehaus.plexus.util.StringUtils;
 import org.elvisdsouza.javafind.domain.JavaFindArtifact;
+import org.elvisdsouza.javafind.domain.SearchResult;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -126,7 +127,7 @@ public class SearchService {
 
     }
 
-    public List<JavaFindArtifact> searchUserInput(String userQueryString) throws IOException {
+    public SearchResult searchUserInput(String userQueryString) throws IOException {
 
         Query qq = constructSuperQuery(userQueryString);
 
@@ -274,7 +275,7 @@ public class SearchService {
         return response.getResults().stream().map(ai -> new JavaFindArtifact(ai)).collect(Collectors.toList());
     }
 
-    public List<JavaFindArtifact> searchGrouped(Indexer nexusIndexer, String descr, Query q,
+    public SearchResult searchGrouped(Indexer nexusIndexer, String descr, Query q,
                                                 int pageSize, int pageNumber) throws IOException {
         System.out.println( " === Grouped Searching Results for -- " + descr );
         GroupedSearchRequest gsr = new GroupedSearchRequest( q, new GAGrouping(), centralContext );
@@ -300,8 +301,9 @@ public class SearchService {
 
         int skipRecords = pageNumber<=1? 0: (pageNumber-1)*pageSize;
 
-        return response.getResults().values().stream().skip(skipRecords).limit(pageSize)
+        List<JavaFindArtifact> artifacts = response.getResults().values().stream().skip(skipRecords).limit(pageSize)
                 .map(ai -> new JavaFindArtifact(ai)).collect(Collectors.toList());
+        return new SearchResult(artifacts, response.getReturnedHitsCount());
     }
 
     /*public byte[] getFileBytes(JavaFindArtifact artifact) {

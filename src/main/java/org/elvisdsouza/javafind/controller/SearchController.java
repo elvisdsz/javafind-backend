@@ -1,6 +1,7 @@
 package org.elvisdsouza.javafind.controller;
 
 import org.elvisdsouza.javafind.domain.JavaFindArtifact;
+import org.elvisdsouza.javafind.domain.SearchResult;
 import org.elvisdsouza.javafind.service.SearchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -20,7 +21,7 @@ public class SearchController {
     private SearchService searchService;
 
     @GetMapping("/searcha")
-    public List<JavaFindArtifact> searchForArtifacts(@RequestParam(name = "q") String queryString) throws IOException {
+    public SearchResult searchForArtifacts(@RequestParam(name = "q") String queryString) throws IOException {
         return searchService.searchUserInput(queryString);
     }
 
